@@ -2,7 +2,7 @@ from bluepy.btle import Scanner, DefaultDelegate
 import binascii
 import datetime
 
-SERVICE_UUID = 'cba20d00-224d-11e6-9fb8-0002a5d5c51b'
+SERVICE_UUID = "cba20d00-224d-11e6-9fb8-0002a5d5c51b"
 
 
 class DevScanner(DefaultDelegate):
@@ -16,7 +16,8 @@ class DevScanner(DefaultDelegate):
         wait: On each scan, how much time to wait for devices
         *args, **kwargs: DefaultDelegate arguments
     """
-    def __init__(self, device='hci0', wait=5, *args, **kwargs):
+
+    def __init__(self, device="hci0", wait=5, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.wait_time = int(wait)
         self.scanner = Scanner().withDelegate(self)
@@ -27,7 +28,7 @@ class DevScanner(DefaultDelegate):
 
     def __next__(self):
         """Each time we call next() over a `DevScanner` object, it will return
-           an iterator with the whole currently-available list of devices.
+        an iterator with the whole currently-available list of devices.
         """
         res = self.scanner.scan(self.wait_time)
         return filter(None, (Device(d) for d in res))
@@ -54,14 +55,15 @@ class Device:
         - humidity: Humidity, percentage.
         - data: Complete dict with all the data minus the mac.
     """
+
     def __init__(self, device):
         self.device = device
         self.mac = None
         self.data = {}
         actions = {
-            '16b Service Data': self.set_service_data,
-            'Local name': self.set_mac,
-            'Complete 128b Services': self.set_mac
+            "16b Service Data": self.set_service_data,
+            "Local name": self.set_mac,
+            "Complete 128b Services": self.set_mac,
         }
         for (_, key, value) in self.device.getScanData():
             # Load data
@@ -79,14 +81,16 @@ class Device:
     def __repr__(self):
         """Represent data model, temp, humidity and mac."""
         if self.data:
-            return (f'<{self.data["model"]} ({self.data["mode"]}) '
-                    f'temp: {self.data["temp"]:.2f} '
-                    f'humidity: {self.data["humidity"]}%> ({self.mac})')
-        return 'Unknown device'
+            return (
+                f'<{self.data["model"]} ({self.data["mode"]}) '
+                f'temp: {self.data["temp"]:.2f} '
+                f'humidity: {self.data["humidity"]}%> ({self.mac})'
+            )
+        return "Unknown device"
 
     def set_mac(self, value):
         """Set device mac."""
-        if value in ('WoHand', 'WoMeter', SERVICE_UUID):
+        if value in ("WoHand", "WoMeter", SERVICE_UUID):
             self.mac = self.device.addr
 
     def set_service_data(self, value):
@@ -94,9 +98,24 @@ class Device:
         if len(value) != 16:
             return
         hexv = binascii.unhexlify(value)
-        self.data = dict(model=hexv[2:3].decode(),
-                         mode=hexv[3:4].hex(),
-                         date=datetime.datetime.now(),
-                         temp=int(hexv[6:7].hex(), 16) - 128 + (hexv[5] / 10),
-                         humidity=hexv[7])
+        value = bytes.fromhex(value)
+        temperature = (value[6] & 0b01111111) + (
+            (value[5] & 0b00001111) / 10
+        )  # Absolute value of temp
+        if not (value[6] & 0b10000000):  # Is temp negative?
+            temperature = -temperature
+        if not (value[7] & 0b10000000):  # C or F?
+            temp_scale = "C"
+        else:
+            temp_scale = "F"
+            temperature = temperature * 1.8 + 32  # Convert to F
+        humidity = value[7] & 0b01111111
+        self.data = dict(
+            model=hexv[2:3].decode(),
+            mode=hexv[3:4].hex(),
+            date=datetime.datetime.now(),
+            temp=float(temperature),
+            temp_scale=temp_scale,
+            humidity=hexv[7],
+        )
         print(self.data)
